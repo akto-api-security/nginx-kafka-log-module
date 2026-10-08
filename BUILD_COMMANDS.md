@@ -70,7 +70,7 @@ ls /usr/lib/nginx/modules/ngx_http_js_module.so
 Before building, check you are on the right branch: `git branch --show-current`.
 
 What the scripts do:
-- Check that librdkafka supports SASL (`scripts/check-librdkafka.sh`).
+- Check that librdkafka supports SASL and SSL, and stop with an error if not. It prints the librdkafka version and feature list.
 - Download the nginx source for the nginx version installed on the machine.
 - Compile the module against it (on macOS they also compile the njs module).
 - With `--install`, copy the `.so` into nginx's modules directory.
