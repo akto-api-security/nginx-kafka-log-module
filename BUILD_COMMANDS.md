@@ -58,14 +58,18 @@ ls /usr/lib/nginx/modules/ngx_http_js_module.so
 
 ### What `--install-deps` installs (Linux)
 
-`scripts/build-linux.sh --install-deps` runs `apt-get install` for the build tools and libraries, all from your distribution's own repositories:
+`scripts/build-linux.sh --install-deps` installs the build tools and libraries from your distribution's repositories, adds Confluent's official apt repository (https://packages.confluent.io/clients/deb, [instructions](https://docs.confluent.io/platform/current/installation/installing_cp/deb-ubuntu.html)), and installs librdkafka from there:
 
-| Package | Why |
-|---|---|
-| `build-essential` | C compiler and `make` |
-| `curl`, `ca-certificates`, `tar` | download and unpack the nginx source |
-| `libpcre2-dev`, `libpcre3-dev`, `zlib1g-dev`, `libssl-dev` | development files nginx's build needs (regex, compression, OpenSSL) |
-| `librdkafka-dev` | the Kafka client library the module links against |
+| Package | Source | Why |
+|---|---|---|
+| `build-essential` | distribution | C compiler and `make` |
+| `curl`, `ca-certificates`, `tar`, `gnupg` | distribution | download and unpack the nginx source, add the Confluent repository |
+| `libpcre2-dev`, `libpcre3-dev`, `zlib1g-dev`, `libssl-dev` | distribution | development files nginx's build needs (regex, compression, OpenSSL) |
+| `librdkafka-dev` | Confluent | the Kafka client library the module links against ([librdkafka docs](https://docs.confluent.io/kafka-clients/librdkafka/current/overview.html)) |
+
+Confluent publishes the repository for Debian 11, 12, 13 and Ubuntu 20.04, 22.04, 24.04. The script reads the release codename from `/etc/os-release` and stops with a clear message for any other release. Other distributions (RPM-based, Alpine) are not supported.
+
+On macOS, librdkafka comes from Homebrew (`brew install librdkafka`), which is what the librdkafka README recommends for macOS.
 
 Before building, check you are on the right branch: `git branch --show-current`.
 

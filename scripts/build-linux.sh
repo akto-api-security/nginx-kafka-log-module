@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Builds ngx_http_kafka_log_module.so from this repository's checked-out branch, for nginx installed from
-# the nginx.org packages on Debian/Ubuntu, against the installed nginx version.
+# the nginx.org packages on Debian and Ubuntu (apt-based), against the installed nginx version.
 # It does not install nginx or njs and does not touch nginx.conf.
 #
 # Usage: scripts/build-linux.sh [--install-deps] [--install]
-#   --install-deps   apt-install the build dependencies first
+#   --install-deps   apt-install the build dependencies first; librdkafka is installed from Confluent's
+#                    apt repository (Debian 11/12/13, Ubuntu 20.04/22.04/24.04)
 #   --install        copy the built module into nginx's modules directory
 #
 # Optional environment: BUILD_DIR (default ~/nginx-build), NGX_VERSION (default: installed version),
@@ -36,8 +37,21 @@ fi
 
 if [ "$INSTALL_DEPS" -eq 1 ]; then
     $SUDO apt-get update -qq
-    $SUDO apt-get install -y -qq build-essential curl ca-certificates tar \
-        libpcre2-dev libpcre3-dev zlib1g-dev libssl-dev librdkafka-dev
+    $SUDO apt-get install -y -qq build-essential curl ca-certificates tar gnupg \
+        libpcre2-dev libpcre3-dev zlib1g-dev libssl-dev
+
+    # librdkafka comes from Confluent's official apt repository (one per Debian/Ubuntu release).
+    CODENAME="$(. /etc/os-release && echo "${VERSION_CODENAME:-}")"
+    [ -n "$CODENAME" ] || fail "could not determine the Debian/Ubuntu release codename from /etc/os-release"
+    CONFLUENT_REPO="https://packages.confluent.io/clients/deb"
+    curl -fsI "$CONFLUENT_REPO/dists/$CODENAME/Release" >/dev/null 2>&1 \
+        || fail "Confluent has no librdkafka repository for '$CODENAME'; install librdkafka-dev yourself and rerun without --install-deps"
+    $SUDO mkdir -p /etc/apt/keyrings
+    curl -fsSL https://packages.confluent.io/deb/8.3/archive.key | gpg --dearmor | $SUDO tee /etc/apt/keyrings/confluent.gpg >/dev/null
+    echo "deb [signed-by=/etc/apt/keyrings/confluent.gpg] $CONFLUENT_REPO $CODENAME main" \
+        | $SUDO tee /etc/apt/sources.list.d/confluent-clients.list >/dev/null
+    $SUDO apt-get update -qq
+    $SUDO apt-get install -y -qq librdkafka-dev
 fi
 
 for tool in nginx curl tar make cc sed; do
