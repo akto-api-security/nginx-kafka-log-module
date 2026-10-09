@@ -54,6 +54,8 @@ static char *ngx_http_kafka_log_set_property(ngx_conf_t *cf,
   ngx_command_t *cmd, void *conf);
 static char *ngx_http_kafka_log_set_rdkafka_property(ngx_conf_t *cf,
   ngx_command_t *cmd, void *conf);
+static char *ngx_http_kafka_log_set_rdkafka_property_env(ngx_conf_t *cf,
+  ngx_command_t *cmd, void *conf);
 static ngx_int_t ngx_http_kafka_log_post_config(ngx_conf_t *cf);
 
 // globals
@@ -151,6 +153,14 @@ static ngx_command_t ngx_http_kafka_log_commands[] = {
         ngx_string("kafka_log_rdkafka_property"),
         NGX_HTTP_MAIN_CONF|NGX_CONF_TAKE2,
         ngx_http_kafka_log_set_rdkafka_property,
+        NGX_HTTP_MAIN_CONF_OFFSET,
+        0,
+        NULL
+    },
+    {
+        ngx_string("kafka_log_rdkafka_property_env"),
+        NGX_HTTP_MAIN_CONF|NGX_CONF_TAKE2,
+        ngx_http_kafka_log_set_rdkafka_property_env,
         NGX_HTTP_MAIN_CONF_OFFSET,
         0,
         NULL
@@ -445,6 +455,42 @@ ngx_http_kafka_log_set_rdkafka_property(ngx_conf_t *cf, ngx_command_t *cmd,
         return NGX_CONF_ERROR;
     }
 
+
+    if (ngx_kafka_log_kafka_conf_property_set(cf->pool, &kmcf->kafka,
+                                              prop_key, prop_value) != NGX_OK) {
+        ngx_conf_log_error(NGX_LOG_ERR, cf, 0,
+                "http_kafka_log: failed to set kafka configuration property");
+        return NGX_CONF_ERROR;
+    }
+
+    return NGX_CONF_OK;
+}
+
+static char *
+ngx_http_kafka_log_set_rdkafka_property_env(ngx_conf_t *cf, ngx_command_t *cmd,
+    void *conf)
+{
+    ngx_http_kafka_log_main_conf_t  *kmcf = conf;
+    ngx_str_t                       *value = cf->args->elts;
+    char                            *prop_key, *env_name, *prop_value;
+
+    prop_key = ngx_kafka_log_str_dup(cf->pool, &value[1]);
+    if (!prop_key) {
+        return NGX_CONF_ERROR;
+    }
+
+    env_name = ngx_kafka_log_str_dup(cf->pool, &value[2]);
+    if (!env_name) {
+        return NGX_CONF_ERROR;
+    }
+
+    prop_value = getenv(env_name);
+    if (prop_value == NULL || prop_value[0] == '\0') {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                "http_kafka_log: environment variable \"%s\" is not set or empty",
+                env_name);
+        return NGX_CONF_ERROR;
+    }
 
     if (ngx_kafka_log_kafka_conf_property_set(cf->pool, &kmcf->kafka,
                                               prop_key, prop_value) != NGX_OK) {
