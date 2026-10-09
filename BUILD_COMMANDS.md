@@ -1,188 +1,113 @@
-# Build and use the nginx Kafka log module
+# Build scripts
 
-This repository builds `ngx_http_kafka_log_module.so`, the nginx module the Akto connector uses to send traffic to Kafka. This branch adds SASL authentication support (upstream pull request https://github.com/kaltura/nginx-kafka-log-module/pull/9).
+These scripts build `ngx_http_kafka_log_module.so`, the nginx module the Akto connector uses to send traffic to Kafka, from the branch you have checked out. This branch adds SASL authentication support (upstream pull request https://github.com/kaltura/nginx-kafka-log-module/pull/9).
 
-Links:
-- Akto nginx connector docs: https://docs.akto.io/traffic-connector/api-gateways/nginx
+Configuring nginx to use the module is not covered here. Follow the Akto docs: https://docs.akto.io/traffic-connector/api-gateways/nginx
+
+Background reading:
 - How nginx dynamic modules are compiled: https://www.f5.com/company/blog/nginx/compiling-dynamic-modules-nginx-plus.html
-- nginx `load_module`: https://nginx.org/en/docs/ngx_core_module.html#load_module
-- nginx `configure` options: https://nginx.org/en/docs/configure.html
-- njs (nginx JavaScript): https://nginx.org/en/docs/njs/
+- nginx packages for Linux: https://nginx.org/en/linux_packages.html
+- librdkafka (the Kafka client library): https://docs.confluent.io/kafka-clients/librdkafka/current/overview.html
 
-A built `.so` only works on the same operating system, CPU architecture and nginx version it was built for. Build it on the machine type that will run it.
+## Which script
 
-## 1. Build
+| Platform | Script |
+|---|---|
+| Debian, Ubuntu (apt-based) | `scripts/build-linux.sh` |
+| macOS with Homebrew | `scripts/build-macos.sh` |
 
-| Platform | Prerequisites | Command (run from the repository root) |
-|---|---|---|
-| macOS (Homebrew) | `brew install nginx librdkafka` ([nginx](https://formulae.brew.sh/formula/nginx), [librdkafka](https://formulae.brew.sh/formula/librdkafka)) | `scripts/build-macos.sh --install` |
-| Debian / Ubuntu | nginx and `nginx-module-njs` from the nginx.org packages (next section) | `scripts/build-linux.sh --install-deps --install` |
+Run them from the repository root. Make them executable once with `chmod +x scripts/*.sh`.
 
-### Linux only: install nginx and njs first
+A built `.so` only works with the operating system, CPU architecture and nginx version it was built for. Build it on the machine that will run nginx.
 
-The build script does **not** install nginx or njs.
+## Before you run
 
-**1. Check what you already have.** If `nginx -v` shows an nginx.org version (no `(Ubuntu)` or `(Debian)` after it) and `/usr/lib/nginx/modules/ngx_http_js_module.so` exists, skip this section.
+- nginx must already be installed. The scripts build against the installed version and do not install nginx.
+- Linux: nginx.org packages are expected (`nginx -v` should not say `(Ubuntu)` or `(Debian)`). The Akto connector also needs the njs module (`nginx-module-njs` from the same repository). The script only warns if it is missing.
+- macOS: `brew install nginx librdkafka`. The macOS script builds the njs module itself.
+- Linux: run as root or with `sudo` available.
 
-**2. Install from the official nginx.org packages** (what the Akto docs expect, `apt install nginx-module-njs`). Do not use a plain `sudo apt install nginx`: the distribution's nginx has no njs package. Official instructions: [Ubuntu](https://nginx.org/en/linux_packages.html#Ubuntu), [Debian](https://nginx.org/en/linux_packages.html#Debian). Ubuntu commands (for Debian, use `debian` instead of `ubuntu` in the repository line and install `debian-archive-keyring` instead of `ubuntu-keyring`):
-
-```
-sudo apt-get remove --purge -y nginx nginx-core nginx-common 'libnginx-mod-*'   # only if the distribution's own nginx is installed
-sudo apt-get update
-sudo apt-get install -y curl gnupg2 ca-certificates lsb-release ubuntu-keyring
-curl -s https://nginx.org/keys/nginx_signing.key | gpg --dearmor | sudo tee /usr/share/keyrings/nginx-archive-keyring.gpg >/dev/null
-gpg --dry-run --quiet --no-keyring --import --import-options import-show /usr/share/keyrings/nginx-archive-keyring.gpg
-echo "deb [signed-by=/usr/share/keyrings/nginx-archive-keyring.gpg] https://nginx.org/packages/ubuntu $(lsb_release -cs) nginx" | sudo tee /etc/apt/sources.list.d/nginx.list
-echo -e "Package: *\nPin: origin nginx.org\nPin: release o=nginx\nPin-Priority: 900\n" | sudo tee /etc/apt/preferences.d/99nginx
-sudo apt-get update
-```
-
-Install nginx:
+## build-linux.sh
 
 ```
-sudo apt-get install -y nginx
-nginx -v
+scripts/build-linux.sh [--install-deps] [--install]
 ```
 
-Then install the njs module (a separate package from the same repository; install it after nginx so the versions match):
+| Flag | Meaning |
+|---|---|
+| `--install-deps` | Install the build dependencies with apt first, including librdkafka from Confluent's apt repository. Without it, the script assumes everything is already installed. |
+| `--install` | After building, copy the module into nginx's modules directory (replacing any older copy). Without it, the module is only built, not installed. |
+| `-h`, `--help` | Print the usage text and exit. |
 
-```
-sudo apt-get install -y nginx-module-njs
-ls /usr/lib/nginx/modules/ngx_http_js_module.so
-```
+Typical first run: `scripts/build-linux.sh --install-deps --install`
+Later rebuilds (dependencies already installed): `scripts/build-linux.sh --install`
 
-- The `gpg --dry-run` line prints the key's fingerprint. It must contain `573BFD6B3D8FBC641079A6ABABF5BD827BD9BF62`.
-- The `echo "deb ..."` line adds the nginx.org repository (stable packages; the nginx.org page also shows a `mainline` variant). The `99nginx` line pins it, so apt prefers nginx.org's packages over the distribution's.
-- After these steps, `apt-get install nginx` installs nginx.org's nginx instead of the distribution's. `nginx-module-njs` is a second package from the same repository.
-- `nginx -v` must not say `(Ubuntu)`.
-
-### What `--install-deps` installs (Linux)
-
-`scripts/build-linux.sh --install-deps` installs the build tools and libraries from your distribution's repositories, adds Confluent's official apt repository (https://packages.confluent.io/clients/deb, [instructions](https://docs.confluent.io/platform/current/installation/installing_cp/deb-ubuntu.html)), and installs librdkafka from there:
+### What `--install-deps` installs
 
 | Package | Source | Why |
 |---|---|---|
 | `build-essential` | distribution | C compiler and `make` |
 | `curl`, `ca-certificates`, `tar`, `gnupg` | distribution | download and unpack the nginx source, add the Confluent repository |
 | `libpcre2-dev`, `libpcre3-dev`, `zlib1g-dev`, `libssl-dev` | distribution | development files nginx's build needs (regex, compression, OpenSSL) |
-| `librdkafka-dev` | Confluent | the Kafka client library the module links against ([librdkafka docs](https://docs.confluent.io/kafka-clients/librdkafka/current/overview.html)) |
+| `librdkafka-dev` | Confluent (https://packages.confluent.io/clients/deb) | the Kafka client library the module links against |
 
-Confluent publishes the repository for Debian 11, 12, 13 and Ubuntu 20.04, 22.04, 24.04. The script reads the release codename from `/etc/os-release` and stops with a clear message for any other release. Other distributions (RPM-based, Alpine) are not supported.
+Confluent publishes the repository for Debian 11, 12, 13 and Ubuntu 20.04, 22.04, 24.04. The script reads the release codename from `/etc/os-release` and stops with a message for any other release. RPM-based distributions and Alpine are not supported.
 
-On macOS, librdkafka comes from Homebrew (`brew install librdkafka`), which is what the librdkafka README recommends for macOS.
-
-Before building, check you are on the right branch: `git branch --show-current`.
-
-What the scripts do:
-- Check that librdkafka supports SASL and SSL, and stop with an error if not. It prints the librdkafka version and feature list.
-- Download the nginx source for the nginx version installed on the machine.
-- Compile the module against it (on macOS they also compile the njs module).
-- With `--install`, copy the `.so` into nginx's modules directory.
-
-The scripts do not edit `nginx.conf`. Do that in step 2.
-
-The built file is at `~/nginx-build/nginx-<version>/objs/ngx_http_kafka_log_module.so`.
-
-## 2. Configure nginx
-
-Follow the Akto docs for the `nginx.conf` changes (link above), with one addition: **`kafka_log_enable on;` is required**. Without it the module sends nothing.
-
-Where the files are:
-
-| | Linux (nginx.org packages) | macOS (Homebrew, Apple Silicon) |
-|---|---|---|
-| nginx.conf | `/etc/nginx/nginx.conf` | `/opt/homebrew/etc/nginx/nginx.conf` |
-| Server block | `/etc/nginx/conf.d/default.conf` | inside `nginx.conf` |
-| Modules | `/usr/lib/nginx/modules/` | `/opt/homebrew/etc/nginx/modules/` |
-| njs script folder | `/etc/nginx/njs/` | `/opt/homebrew/etc/nginx/njs/` |
-| Restart | `sudo systemctl restart nginx` | `brew services restart nginx` |
-
-On an Intel Mac, replace `/opt/homebrew` with the output of `brew --prefix`.
-
-Download Akto's script into the njs folder:
+## build-macos.sh
 
 ```
-curl -o <njs folder>/api_log.js https://raw.githubusercontent.com/akto-api-security/nginx-middleware/master/api_log.js
+scripts/build-macos.sh [--install]
 ```
 
-Top of `nginx.conf` (use the modules folder from the table):
-
-```
-load_module <modules folder>/ngx_http_js_module.so;
-load_module <modules folder>/ngx_http_kafka_log_module.so;
-```
-
-Inside `http { ... }`:
-
-```
-subrequest_output_buffer_size 8k;
-js_path "<njs folder>/";
-js_var $responseBo "{}";
-js_import main2 from api_log.js;
-kafka_log_enable on;
-kafka_log_kafka_brokers "<broker host>:<port>";
-kafka_log_kafka_buffer_max_messages 100000;
-```
-
-Inside the `location` that proxies your application:
-
-```
-js_body_filter main2.to_lower_case buffer_type=buffer;
-kafka_log kafka:akto.api.logs $responseBo;
-```
-
-Then check and restart:
-
-```
-nginx -t
-sudo systemctl restart nginx        # macOS: brew services restart nginx
-ps -eo pid,command | grep "[n]ginx: worker"
-```
-
-`nginx -t` must pass, and **at least one worker process must be listed**.
-
-## 3. Optional: SASL authentication
-
-Point `kafka_log_kafka_brokers` at the broker's SASL listener and add:
-
-```
-kafka_log_rdkafka_property security.protocol SASL_PLAINTEXT;
-kafka_log_rdkafka_property sasl.mechanism PLAIN;
-kafka_log_rdkafka_property sasl.username <user>;
-kafka_log_rdkafka_property sasl.password <password>;
-```
-
-- Any librdkafka setting can be passed this way. Property names: [librdkafka configuration reference](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md). SASL overview: [Using SASL with librdkafka](https://github.com/confluentinc/librdkafka/wiki/Using-SASL-with-librdkafka). Broker side: [Kafka security documentation](https://kafka.apache.org/documentation/#security).
-- The user and password must match the broker's configuration for that listener.
-- `SASL_PLAINTEXT` sends the password unencrypted. Use `SASL_SSL` (with `ssl.*` properties) if the network is not trusted.
-- nginx does not expand environment variables in these lines. The password goes into the file, so restrict who can read it.
-- SASL/PLAIN works with a standard librdkafka. TLS and SCRAM need a librdkafka built with OpenSSL; the build scripts print what yours supports.
-
-## 4. Check that it works
-
-```
-docker exec <kafka container> kafka-get-offsets --bootstrap-server localhost:29092 --topic akto.api.logs
-curl -s -o /dev/null http://localhost/<a path nginx proxies>
-docker exec <kafka container> kafka-get-offsets --bootstrap-server localhost:29092 --topic akto.api.logs
-```
-
-The offset rises by 1 for every request that goes through nginx. With a wrong password it does not move, and `error.log` shows `SASL authentication error`.
-
-## 5. Things to know
-
-- The module is **off unless `kafka_log_enable on;` is set**. Configs written for the Akto docs stop sending without it.
-- If a SASL setting makes the Kafka client unable to start (for example an unsupported `sasl.mechanism`), nginx logs `kafka_log: rd_kafka_new failed` and the worker exits for good. nginx then runs with no workers and serves nothing. Always confirm a worker process exists after a restart.
-- A rejected setting is logged with its value, so a mistyped key such as `sasl.passwrd` prints the real password.
-- Wrong credentials do not break requests, but nothing reaches Kafka. Watch `error.log`.
-- If a consumer fails with `SnappyError`, add `kafka_log_kafka_compression none;` (the module compresses with snappy by default).
-
-## 6. Troubleshooting
-
-| Symptom | Fix |
+| Flag | Meaning |
 |---|---|
-| `unknown directive "kafka_log_enable"` | The installed module was not built from this branch. Rebuild and reinstall. |
-| `module ... is not binary compatible` | Built for a different nginx version. Rebuild on the installed version. |
-| macOS: `nginx -t` prints `killed` | A module was copied over an existing file. Use `--install` (it deletes the old file first). |
-| Offset never moves | `kafka_log_enable` missing, nginx not restarted, or you read a different Kafka than nginx writes to. |
-| Build fails with `-Werror` on a librdkafka header (Linux) | Run `EXTRA_CC_OPT=-Wno-error scripts/build-linux.sh --install`. |
-| `Required feature not supported by broker` | You are connecting to the KRaft controller port. Use a client listener. |
+| `--install` | After building, copy the kafka and njs modules into Homebrew nginx's modules directory. Without it, the modules are only built. |
+| `-h`, `--help` | Print the usage text and exit. |
+
+It does not install dependencies. librdkafka comes from Homebrew (`brew install librdkafka`).
+
+## Environment variables (both scripts)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `BUILD_DIR` | `~/nginx-build` | Where the nginx source, logs and build output go. |
+| `NGX_VERSION` | the installed nginx version | Build against a different nginx source version. It must match the nginx that will load the module. |
+| `MODULES_DIR` | Linux: nginx's `--modules-path`. macOS: `$(brew --prefix)/etc/nginx/modules` | Where `--install` copies the module. |
+| `EXTRA_CC_OPT` | none (Linux only) | Extra compiler flags, for example `-Wno-error`. |
+
+Example: `EXTRA_CC_OPT=-Wno-error scripts/build-linux.sh --install`
+
+## What each script does
+
+1. Checks the platform and that the required tools exist.
+2. (Linux, with `--install-deps`) Installs the dependencies.
+3. Checks that librdkafka supports `sasl`, `sasl_plain` and `ssl`, and stops if not. It prints the librdkafka version and feature list.
+4. Downloads the nginx source for the installed nginx version, if it is not already in `BUILD_DIR`.
+5. Reads the flags the installed nginx was built with (`nginx -V`) and reuses them, plus `--with-compat`, so the module is binary compatible.
+6. Compiles the module (macOS: and the njs module).
+7. Checks the result is linked against librdkafka.
+8. (With `--install`) Copies it into the modules directory.
+
+The scripts do not edit `nginx.conf` and do not restart nginx.
+
+## Output
+
+| Item | Location |
+|---|---|
+| Built module | `~/nginx-build/nginx-<version>/objs/ngx_http_kafka_log_module.so` (macOS also builds `ngx_http_js_module.so`) |
+| Configure log | `~/nginx-build/configure.log` |
+| Build log | `~/nginx-build/make.log` |
+
+Normal output is a few lines (nginx version, librdkafka version and features, `Built:`, `Installed:`). On failure, the last lines of the relevant log are printed along with the log path.
+
+## Troubleshooting
+
+| Message or symptom | Fix |
+|---|---|
+| `Confluent has no librdkafka repository for '<codename>'` | Your release is not supported by `--install-deps`. Install `librdkafka-dev` yourself (it must support SASL and SSL) and run without `--install-deps`. |
+| `librdkafka ... does not support 'sasl'` (or `ssl`) | The installed librdkafka was built without that feature. Use Confluent's package (Linux) or Homebrew's (macOS). |
+| `required tool not found: nginx` | Install nginx first. |
+| Build fails with `-Werror` on a librdkafka header (Linux) | `EXTRA_CC_OPT=-Wno-error scripts/build-linux.sh --install` |
+| nginx prints `module ... is not binary compatible` | The module was built for a different nginx version. Rebuild on the installed version. |
+| `unknown directive "kafka_log_enable"` | The installed module was not built from this branch. Check `git branch --show-current`, rebuild with `--install`. |
+| macOS: `nginx -t` prints `killed` | A module was copied over an existing file. Use `--install`, which deletes the old file first. |
