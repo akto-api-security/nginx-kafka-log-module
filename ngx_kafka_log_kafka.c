@@ -254,8 +254,8 @@ ngx_kafka_log_kafka_conf_property_set(
     ret = rd_kafka_conf_set(conf->rkc, key, value, errstr, sizeof(errstr));
     if (ret != RD_KAFKA_CONF_OK) {
         ngx_log_error(NGX_LOG_ERR, pool->log, 0,
-                     "kafka_log: rd_kafka_conf_set failed [%s] => [%s]: %s",
-                      key, value, errstr);
+                     "kafka_log: rd_kafka_conf_set failed [%s]: %s",
+                      key, errstr);
         return NGX_ERROR;
     }
 
